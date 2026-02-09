@@ -15,7 +15,7 @@ import time
 from abc import ABC, abstractmethod
 from typing import Generator, Optional, Tuple
 import numpy as np
-from inference_perf.utils.trace_reader import TraceReader
+from inference_perf.tracegen.azure import TraceReader
 from pathlib import Path
 
 

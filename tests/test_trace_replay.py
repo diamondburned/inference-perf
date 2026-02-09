@@ -23,10 +23,10 @@ class TestTraceReplay:
 
         try:
             # Test 1: Load timing information
-            from inference_perf.utils.trace_reader import AzurePublicDatasetReader
+            from inference_perf.tracegen.azure import AzurePublicDatasetTraceReader
             from inference_perf.loadgen.load_timer import TraceReplayLoadTimer
 
-            reader = AzurePublicDatasetReader()
+            reader = AzurePublicDatasetTraceReader()
             timer = TraceReplayLoadTimer(trace_reader=reader, trace_file=temp_path)
 
             timestamps = list(timer.start_timer(initial=0.0))

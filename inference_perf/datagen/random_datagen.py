@@ -19,7 +19,7 @@ from inference_perf.utils.distribution import generate_distribution
 from .base import DataGenerator, LazyLoadDataMixin
 from typing import Generator, List, Optional
 from inference_perf.config import APIType, APIConfig, DataConfig, TraceFormat
-from inference_perf.utils.trace_reader import AzurePublicDatasetReader
+from inference_perf.tracegen.azure import AzurePublicDatasetTraceReader
 import logging
 
 logger = logging.getLogger(__name__)
@@ -61,7 +61,7 @@ class RandomDataGenerator(DataGenerator, LazyLoadDataMixin):
         else:
             # let's read the trace file and get the input and output lengths
             if self.trace.format == TraceFormat.AZURE_PUBLIC_DATASET:
-                self.trace_reader = AzurePublicDatasetReader()
+                self.trace_reader = AzurePublicDatasetTraceReader()
             else:
                 raise ValueError(f"Unsupported trace format: {self.trace.format}")
 
@@ -80,7 +80,7 @@ class RandomDataGenerator(DataGenerator, LazyLoadDataMixin):
             raise ValueError("Tokenizer is required for RandomDataGenerator")
 
         hf_tokenizer = self.tokenizer.get_tokenizer()
-        if hasattr(hf_tokenizer, "vocab_size") and hf_tokenizer.vocab_size is not None:
+        if hasattr(hf_tokenizer, "vocab_size") and isinstance(hf_tokenizer.vocab_size, int):
             self.vocab_size: int = hf_tokenizer.vocab_size
         elif hasattr(hf_tokenizer, "get_vocab") and callable(hf_tokenizer.get_vocab):
             self.vocab_size = len(hf_tokenizer.get_vocab())

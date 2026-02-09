@@ -24,6 +24,7 @@ from inference_perf.config import (
     ReportConfig,
     StandardLoadStage,
     ConcurrentLoadStage,
+    TraceFormat,
     read_config,
 )
 from inference_perf.datagen import (
@@ -60,8 +61,14 @@ from inference_perf.circuit_breaker import init_circuit_breakers
 from inference_perf.reportgen import ReportGenerator
 from inference_perf.utils import CustomTokenizer, ReportFile
 from inference_perf.logger import setup_logging
+from inference_perf.tracegen import MooncakeTraceGenerator, AzurePublicDatasetTraceGenerator
+
 import asyncio
 import time
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 class InferencePerfRunner:
@@ -100,6 +107,7 @@ class InferencePerfRunner:
 def main_cli() -> None:
     # Parse command line arguments
     parser = ArgumentParser()
+    parser.add_argument("action", nargs="?", default="run")
     parser.add_argument("-c", "--config_file", help="Config File", required=False)
     parser.add_argument("-a", "--analyze", nargs="*", help="Path to a report directory to analyze.", required=False)
     parser.add_argument(
@@ -229,7 +237,8 @@ def main_cli() -> None:
                 api_config=config.api,
                 timeout=config.load.request_timeout,
             )
-            tokenizer = model_server_client.tokenizer
+            if model_server_client.tokenizer:
+                tokenizer = model_server_client.tokenizer
     else:
         raise Exception("model server client config missing")
 
@@ -312,32 +321,72 @@ def main_cli() -> None:
         config.load.interval = max(config.load.interval, metrics_client.scrape_interval)
     loadgen = LoadGenerator(datagen, config.load)
 
-    # Setup Perf Test Runner
-    perfrunner = InferencePerfRunner(model_server_client, loadgen, reportgen, storage_clients)
+    match args.action:
+        case "run":
+            # Setup Perf Test Runner
+            perfrunner = InferencePerfRunner(model_server_client, loadgen, reportgen, storage_clients)
 
-    start_time = time.time()
+            start_time = time.time()
 
-    # Run Perf Test
-    perfrunner.run()
+            # Run Perf Test
+            perfrunner.run()
 
-    end_time = time.time()
-    duration = end_time - start_time  # Calculate the duration of the test
+            end_time = time.time()
+            duration = end_time - start_time  # Calculate the duration of the test
 
-    # Generate Reports after the tests
-    reports = perfrunner.generate_reports(
-        report_config=config.report,
-        runtime_parameters=PerfRuntimeParameters(
-            start_time=start_time,
-            duration=duration,
-            model_server_metrics=model_server_client.get_prometheus_metric_metadata(),
-            stages=loadgen.stage_runtime_info,
-        ),
-    )
+            # Generate Reports after the tests
+            reports = perfrunner.generate_reports(
+                report_config=config.report,
+                runtime_parameters=PerfRuntimeParameters(
+                    start_time=start_time,
+                    duration=duration,
+                    model_server_metrics=model_server_client.get_prometheus_metric_metadata(),
+                    stages=loadgen.stage_runtime_info,
+                ),
+            )
 
-    # Save Reports
-    perfrunner.save_reports(reports=reports)
+            # Save Reports
+            perfrunner.save_reports(reports=reports)
 
-    perfrunner.stop()
+            perfrunner.stop()
+
+        case "tracegen":
+            if tokenizer is None:
+                raise Exception("Trace generation requires a configured tokenizer")
+
+            if not config.data.trace:
+                raise Exception("Trace generation requires 'data.trace' configuration for output file and format.")
+
+            logger.info("Starting trace generation...")
+
+            # Calculate total requests from load config
+            total_requests = 0
+            for stage in config.load.stages:
+                if isinstance(stage, StandardLoadStage):
+                    total_requests += int(stage.rate * stage.duration)
+                elif isinstance(stage, ConcurrentLoadStage):
+                    total_requests += stage.num_requests
+
+            trace_format = config.data.trace.format
+            output_file = config.data.trace.file
+
+            logger.info(f"Generating {total_requests} traces in {trace_format.value} format to {output_file}")
+
+            if trace_format == TraceFormat.MOONCAKE:
+                trace_generator = MooncakeTraceGenerator(tokenizer)
+                traces = trace_generator.generate_from_datagen(data_generator=datagen, num_requests=total_requests)
+                trace_generator.save_traces(traces, output_file)
+            elif trace_format == TraceFormat.AZURE_PUBLIC_DATASET:
+                trace_generator = AzurePublicDatasetTraceGenerator(tokenizer)
+                traces = trace_generator.generate_from_datagen(data_generator=datagen, num_requests=total_requests)
+                trace_generator.save_traces(traces, output_file)
+            else:
+                raise ValueError(f"Unsupported trace format: {trace_format}")
+
+            logger.info(f"Trace generation complete. Saved {len(traces)} traces to {output_file}")
+
+        case _:
+            raise ValueError(f"Unknown action: {args.action}")
 
 
 if __name__ == "__main__":

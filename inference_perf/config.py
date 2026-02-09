@@ -36,6 +36,7 @@ class APIConfig(BaseModel):
 
 class TraceFormat(Enum):
     AZURE_PUBLIC_DATASET = "AzurePublicDataset"
+    MOONCAKE = "Mooncake"
 
 
 class TraceConfig(BaseModel):

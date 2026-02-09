@@ -13,10 +13,10 @@
 # limitations under the License.
 from pathlib import Path
 from inference_perf.client.metricsclient.base import StageRuntimeInfo, StageStatus
-from inference_perf.utils.trace_reader import AzurePublicDatasetReader
+from inference_perf.tracegen.azure import AzurePublicDatasetTraceReader
 from inference_perf.utils.request_queue import RequestQueue
 from .load_timer import LoadTimer, ConstantLoadTimer, PoissonLoadTimer, TraceReplayLoadTimer
-from inference_perf.datagen import DataGenerator, LazyLoadDataMixin
+from inference_perf.datagen import DataGenerator, LazyLoadDataMixin, RandomDataGenerator
 from inference_perf.apis import InferenceAPIData
 from inference_perf.client.modelserver import ModelServerClient
 from inference_perf.circuit_breaker import get_circuit_breaker
@@ -227,7 +227,7 @@ class LoadGenerator:
                 raise ValueError("Trace file is required for trace replay load generator")
 
             if self.trace.format == TraceFormat.AZURE_PUBLIC_DATASET:
-                self.trace_reader = AzurePublicDatasetReader()
+                self.trace_reader = AzurePublicDatasetTraceReader()
             else:
                 raise ValueError(f"Unsupported trace format: {self.trace.format}")
         self.lora_adapters: Optional[List[str]] = None
@@ -307,7 +307,7 @@ class LoadGenerator:
         start_time_epoch = time.time()
         start_time = time.perf_counter() + 1
 
-        if self.datagen.trace is not None:
+        if isinstance(self.datagen, RandomDataGenerator):
             num_requests = self.datagen.get_request_count()
         else:
             num_requests = int(rate * duration)
@@ -558,6 +558,7 @@ class LoadGenerator:
             return await self.mp_run(client)
 
         for stage_id, stage in enumerate(self.stages):
+            assert stage.rate and stage.duration
             timer = self.get_timer(stage.rate, stage.duration)
             start_time_epoch = time.time()
             start_time = time.perf_counter()
